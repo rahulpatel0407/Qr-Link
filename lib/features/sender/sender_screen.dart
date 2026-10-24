@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,124 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../theme/app_colors.dart';
 import 'file_picker_widget.dart';
 import 'qr_display_widget.dart';
+import 'sender_controller.dart';
 
-// Sender State Model
-class SenderState {
-  final int step; // 0: File Picker, 1: QR Display
-  final String filePath;
-  final int fileSize;
-  final String fileName;
-  final String fileType;
-  final bool isCompressing;
-  final List<String> qrFrames;
-  final int fps;
-  final bool isPaused;
-  final bool loopFrames;
-  final String sessionId;
-
-  SenderState({
-    this.step = 0,
-    this.filePath = '',
-    this.fileSize = 0,
-    this.fileName = '',
-    this.fileType = '',
-    this.isCompressing = false,
-    this.qrFrames = const [],
-    this.fps = 10,
-    this.isPaused = false,
-    this.loopFrames = true,
-    this.sessionId = '',
-  });
-
-  SenderState copyWith({
-    int? step,
-    String? filePath,
-    int? fileSize,
-    String? fileName,
-    String? fileType,
-    bool? isCompressing,
-    List<String>? qrFrames,
-    int? fps,
-    bool? isPaused,
-    bool? loopFrames,
-    String? sessionId,
-  }) {
-    return SenderState(
-      step: step ?? this.step,
-      filePath: filePath ?? this.filePath,
-      fileSize: fileSize ?? this.fileSize,
-      fileName: fileName ?? this.fileName,
-      fileType: fileType ?? this.fileType,
-      isCompressing: isCompressing ?? this.isCompressing,
-      qrFrames: qrFrames ?? this.qrFrames,
-      fps: fps ?? this.fps,
-      isPaused: isPaused ?? this.isPaused,
-      loopFrames: loopFrames ?? this.loopFrames,
-      sessionId: sessionId ?? this.sessionId,
-    );
-  }
-}
-
-// Sender Controller
-class SenderController extends StateNotifier<SenderState> {
-  SenderController() : super(SenderState(sessionId: _generateSessionId()));
-
-  static String _generateSessionId() {
-    return (1000 + Random().nextInt(9000)).toString(); // Simple 4-digit ID
-  }
-
-  void fileSelected(String path, int size, String type) {
-    state = state.copyWith(
-      filePath: path,
-      fileSize: size,
-      fileName: path.split('/').last,
-      fileType: type,
-    );
-  }
-
-  Future<void> startTransfer() async {
-    state = state.copyWith(isCompressing: true);
-    
-    // Simulate File Processing (Read -> Compress -> Encrypt -> Chunk)
-    await Future.delayed(const Duration(seconds: 2));
-    
-    // Generate dummy QR frames
-    List<String> mockFrames = List.generate(
-      50, 
-      (index) => base64UrlEncode(utf8.encode('QRLink_Frame_${index}_${state.sessionId}'))
-    );
-
-    state = state.copyWith(
-      isCompressing: false,
-      step: 1, // Move to QR Display
-      qrFrames: mockFrames,
-    );
-    
-    // NOTE: Wakelock and screen brightness should be handled here via plugins
-  }
-
-  void togglePause() {
-    state = state.copyWith(isPaused: !state.isPaused);
-  }
-
-  void setFps(int fps) {
-    state = state.copyWith(fps: fps);
-  }
-
-  void toggleLoop() {
-    state = state.copyWith(loopFrames: !state.loopFrames);
-  }
-
-  void reset() {
-    state = SenderState(sessionId: _generateSessionId());
-  }
-}
-
-final senderProvider = StateNotifierProvider<SenderController, SenderState>((ref) {
-  return SenderController();
-});
-
-// Sender Screen
 class SenderScreen extends ConsumerStatefulWidget {
   const SenderScreen({super.key});
 
@@ -135,8 +17,9 @@ class SenderScreen extends ConsumerStatefulWidget {
 class _SenderScreenState extends ConsumerState<SenderScreen> {
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(senderProvider);
-    final controller = ref.read(senderProvider.notifier);
+    final state = ref.watch(senderControllerProvider);
+    final controller = ref.read(senderControllerProvider.notifier);
+    final isStreaming = state.qrFrames.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.black,
@@ -146,7 +29,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.white),
           onPressed: () {
-            if (state.step == 1) {
+            if (isStreaming) {
               controller.reset();
             } else {
               Navigator.pop(context);
@@ -154,7 +37,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
           },
         ),
         title: Text(
-          'SEND FILE',
+          isStreaming ? 'STREAMING QR' : 'SEND FILE',
           style: GoogleFonts.orbitron(
             color: AppColors.cyan,
             fontWeight: FontWeight.bold,
@@ -162,7 +45,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
           ),
         ),
         actions: [
-          if (state.step == 1)
+          if (isStreaming)
             IconButton(
               icon: Icon(
                 state.isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
@@ -174,19 +57,47 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
       ),
       body: Column(
         children: [
+          if (state.errorMessage != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: AppColors.amber.withOpacity(0.2),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: AppColors.amber, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      state.errorMessage!,
+                      style: GoogleFonts.inter(color: AppColors.amber, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              child: state.step == 0
+              child: !isStreaming
                   ? FilePickerWidget(
                       key: const ValueKey(0),
-                      isFileSelected: state.filePath.isNotEmpty,
-                      fileName: state.fileName,
+                      isFileSelected: state.fileBytes != null && state.fileBytes!.isNotEmpty,
+                      fileName: state.fileName ?? '',
                       fileSize: state.fileSize,
-                      fileType: state.fileType,
-                      isCompressing: state.isCompressing,
-                      onFileSelected: controller.fileSelected,
-                      onStartTransfer: controller.startTransfer,
+                      fileType: (state.fileName ?? '').split('.').last,
+                      isCompressing: state.status == SenderStatus.compressing ||
+                          state.status == SenderStatus.chunking ||
+                          state.status == SenderStatus.generating,
+                      onFileSelected: (name, size, type, bytes) {
+                        controller.setFileBytes(name: name, size: size, bytes: bytes);
+                      },
+                      onStartTransfer: (encrypt, passphrase, compression) {
+                        controller.startTransfer(
+                          encrypt: encrypt,
+                          passphrase: passphrase,
+                          compression: compression,
+                        );
+                      },
                     )
                   : QrDisplayWidget(
                       key: const ValueKey(1),
@@ -197,7 +108,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
             ),
           ),
           
-          if (state.step == 1) ...[
+          if (isStreaming) ...[
             // Bottom Stats Bar
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -216,7 +127,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
                     children: [
                       Text(
                         'Session: #${state.sessionId}',
-                        style: GoogleFonts.jetBrainsMono(color: AppColors.cyan),
+                        style: GoogleFonts.jetBrainsMono(color: AppColors.cyan, fontWeight: FontWeight.bold),
                       ),
                       Row(
                         children: [
@@ -241,7 +152,7 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
                             onTap: controller.toggleLoop,
                             child: Icon(
                               Icons.loop_rounded,
-                              color: state.loopFrames ? AppColors.cyan : AppColors.muted,
+                              color: state.isLooping ? AppColors.cyan : AppColors.muted,
                             ),
                           ),
                         ],
@@ -254,14 +165,14 @@ class _SenderScreenState extends ConsumerState<SenderScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          state.fileName,
+                          state.fileName ?? 'Transferring File',
                           style: GoogleFonts.inter(color: AppColors.white, fontWeight: FontWeight.bold),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Text(
-                        'Est. Time: ~2m',
+                        '${state.chunks.length} chunks',
                         style: GoogleFonts.inter(color: AppColors.amber),
                       ),
                     ],

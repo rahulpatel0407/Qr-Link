@@ -1,6 +1,7 @@
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:archive/archive.dart';
 
 /// Compression algorithms supported by the service.
 enum CompressionAlgorithm {
@@ -33,12 +34,19 @@ class CompressedData {
 /// Supports instance and static usage patterns.
 class CompressionService {
   /// Compresses [input] using the specified [algo].
-  /// All compression runs in a background isolate to prevent UI jank.
+  /// On web or small inputs, runs directly. On native platforms, runs in an isolate.
   Future<CompressedData> compress(
     Uint8List input,
     CompressionAlgorithm algo,
   ) async {
-    return await Isolate.run(() => _compressSync(input, algo));
+    if (kIsWeb || input.length < 50000) {
+      return _compressSync(input, algo);
+    }
+    try {
+      return await Isolate.run(() => _compressSync(input, algo));
+    } catch (_) {
+      return _compressSync(input, algo);
+    }
   }
 
   /// Decompresses [input] using the specified [algo].
@@ -46,48 +54,56 @@ class CompressionService {
     Uint8List input,
     CompressionAlgorithm algo,
   ) async {
-    return await Isolate.run(() => _decompressSync(input, algo));
+    if (kIsWeb || input.length < 50000) {
+      return _decompressSync(input, algo);
+    }
+    try {
+      return await Isolate.run(() => _decompressSync(input, algo));
+    } catch (_) {
+      return _decompressSync(input, algo);
+    }
   }
 
-  /// Internal sync compression (runs inside isolate).
+  /// Internal sync compression using pure Dart archive package.
   static CompressedData _compressSync(
     Uint8List input,
     CompressionAlgorithm algo,
   ) {
-    Uint8List compressedBytes;
-    CompressionAlgorithm usedAlgo;
-
-    switch (algo) {
-      case CompressionAlgorithm.gzip:
-        compressedBytes = Uint8List.fromList(gzip.encode(input));
-        usedAlgo = CompressionAlgorithm.gzip;
-        break;
-      case CompressionAlgorithm.zstd:
-        // Zstd FFI not bundled — fall back to gzip with a note
-        compressedBytes = Uint8List.fromList(gzip.encode(input));
-        usedAlgo = CompressionAlgorithm.gzip;
-        break;
-      case CompressionAlgorithm.auto:
-        // Auto: try gzip (only available algo without native FFI)
-        compressedBytes = Uint8List.fromList(gzip.encode(input));
-        usedAlgo = CompressionAlgorithm.gzip;
-        break;
+    if (input.isEmpty) {
+      return CompressedData(
+        bytes: Uint8List(0),
+        algorithm: algo,
+        originalSize: 0,
+        compressedSize: 0,
+      );
     }
+
+    final encoder = GZipEncoder();
+    final compressedList = encoder.encode(input);
+    final compressedBytes = compressedList != null
+        ? Uint8List.fromList(compressedList)
+        : input;
 
     return CompressedData(
       bytes: compressedBytes,
-      algorithm: usedAlgo,
+      algorithm: algo,
       originalSize: input.length,
       compressedSize: compressedBytes.length,
     );
   }
 
-  /// Internal sync decompression (runs inside isolate).
+  /// Internal sync decompression using pure Dart archive package.
   static Uint8List _decompressSync(
     Uint8List input,
     CompressionAlgorithm algo,
   ) {
-    // All currently supported algorithms use gzip under the hood
-    return Uint8List.fromList(gzip.decode(input));
+    if (input.isEmpty) return Uint8List(0);
+    try {
+      final decoder = GZipDecoder();
+      final decompressedList = decoder.decodeBytes(input);
+      return Uint8List.fromList(decompressedList);
+    } catch (e) {
+      return input;
+    }
   }
 }

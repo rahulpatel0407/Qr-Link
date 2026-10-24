@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
@@ -5,8 +7,8 @@ import 'package:file_picker/file_picker.dart';
 import '../../theme/app_colors.dart';
 
 class FilePickerWidget extends StatefulWidget {
-  final Function(String path, int size, String type) onFileSelected;
-  final VoidCallback onStartTransfer;
+  final Function(String name, int size, String type, Uint8List bytes) onFileSelected;
+  final Function(bool encrypt, String? passphrase, String compression) onStartTransfer;
   final bool isFileSelected;
   final String fileName;
   final int fileSize;
@@ -37,14 +39,14 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
-        withData: true, // Required for web — loads bytes directly
+        withData: true,
       );
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         final ext = file.extension ?? '';
-        // Use file.name on web (path is unavailable), path on mobile
-        final identifier = file.name;
-        widget.onFileSelected(identifier, file.size, ext);
+        final bytes = file.bytes ?? Uint8List(0);
+        final size = bytes.isNotEmpty ? bytes.length : file.size;
+        widget.onFileSelected(file.name, size, ext, bytes);
       }
     } catch (e) {
       if (mounted) {
@@ -53,6 +55,24 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
         );
       }
     }
+  }
+
+  void _loadSampleFile() {
+    final sampleText = '''
+=== QRLink Air-Gapped Transfer Test ===
+Session: Demo Verification Document
+Protocol: QRLink Binary Frames (Magic: QRL1)
+Status: End-to-End Integrity Verified
+Features:
+- Offline CRC32 Packet Integrity
+- GZip Stream Compression
+- Optional AES-256-GCM Encryption
+- Multi-Frame QR Animated Pipeline
+- Web & Mobile Universal Compatibility
+=======================================
+''';
+    final bytes = Uint8List.fromList(utf8.encode(sampleText));
+    widget.onFileSelected('QRLink_Demo_Document.txt', bytes.length, 'txt', bytes);
   }
 
   @override
@@ -72,14 +92,13 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
           GestureDetector(
             onTap: _pickFile,
             child: Container(
-              height: 200,
+              height: 180,
               decoration: BoxDecoration(
                 color: AppColors.slate.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: widget.isFileSelected ? AppColors.cyan : AppColors.muted,
                   width: 2,
-                  style: BorderStyle.solid, // Should ideally be dashed
                 ),
               ),
               child: Column(
@@ -87,15 +106,20 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
                 children: [
                   Icon(
                     widget.isFileSelected ? Icons.file_present_rounded : Icons.cloud_upload_rounded,
-                    size: 64,
+                    size: 56,
                     color: widget.isFileSelected ? AppColors.cyan : AppColors.muted,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   if (widget.isFileSelected) ...[
-                    Text(
-                      widget.fileName,
-                      style: GoogleFonts.inter(color: AppColors.white, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        widget.fileName,
+                        style: GoogleFonts.inter(color: AppColors.white, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -104,12 +128,12 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
                     ),
                   ] else ...[
                     Text(
-                      'Tap to select a file',
+                      'Tap to select a file from device',
                       style: GoogleFonts.inter(color: AppColors.white, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Any file up to 50MB',
+                      'Supports any file (images, PDFs, documents, audio)',
                       style: GoogleFonts.inter(color: AppColors.muted, fontSize: 12),
                     ),
                   ],
@@ -118,7 +142,24 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
             ),
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
+
+          // Quick Demo File Option
+          OutlinedButton.icon(
+            onPressed: _loadSampleFile,
+            icon: const Icon(Icons.description_outlined, color: AppColors.cyan, size: 18),
+            label: Text(
+              'Load Quick Test File (Demo)',
+              style: GoogleFonts.inter(color: AppColors.cyan, fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.cyan.withOpacity(0.5)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+
+          const SizedBox(height: 24),
 
           if (widget.isFileSelected) ...[
             // Compression Options
@@ -150,7 +191,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Encryption', style: GoogleFonts.inter(color: AppColors.muted, fontSize: 14)),
+                Text('Encryption (AES-256)', style: GoogleFonts.inter(color: AppColors.muted, fontSize: 14)),
                 Switch(
                   value: _encryptionEnabled,
                   onChanged: (val) => setState(() => _encryptionEnabled = val),
@@ -180,11 +221,17 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
               ),
             ],
 
-            const Spacer(),
+            const SizedBox(height: 32),
 
             // Start Button
             ElevatedButton(
-              onPressed: widget.isCompressing ? null : widget.onStartTransfer,
+              onPressed: widget.isCompressing
+                  ? null
+                  : () => widget.onStartTransfer(
+                        _encryptionEnabled,
+                        _passphraseController.text,
+                        _compressionMode,
+                      ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.cyan,
                 foregroundColor: AppColors.black,

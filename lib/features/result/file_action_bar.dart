@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +48,16 @@ class _FileActionBarState extends State<FileActionBar> {
 
   Future<void> _saveToDownloads() async {
     try {
+      if (kIsWeb) {
+        if (widget.fileBytes.isNotEmpty) {
+          final xFile = XFile.fromData(widget.fileBytes, name: widget.fileName);
+          await Share.shareXFiles([xFile], text: 'Downloaded via QRLink');
+          _showSnackbar('File ready / shared: ${widget.fileName}');
+        } else {
+          _showSnackbar('File downloaded: ${widget.fileName}');
+        }
+        return;
+      }
       Directory? downloadsDirectory;
       if (Platform.isAndroid) {
         downloadsDirectory = Directory('/storage/emulated/0/Download');
@@ -69,7 +80,9 @@ class _FileActionBarState extends State<FileActionBar> {
 
   Future<void> _shareFile() async {
     try {
-      final xFile = XFile(widget.filePath);
+      final xFile = widget.fileBytes.isNotEmpty
+          ? XFile.fromData(widget.fileBytes, name: widget.fileName)
+          : XFile(widget.filePath);
       await Share.shareXFiles([xFile], text: 'Shared via QRLink');
     } catch (e) {
       _showSnackbar('Failed to share file: $e');
@@ -78,6 +91,10 @@ class _FileActionBarState extends State<FileActionBar> {
 
   Future<void> _openFile() async {
     try {
+      if (kIsWeb) {
+        _showSnackbar('Direct file opening is handled via browser download');
+        return;
+      }
       final result = await OpenFilex.open(widget.filePath);
       if (result.type != ResultType.done) {
         _showSnackbar('Could not open file: ${result.message}');

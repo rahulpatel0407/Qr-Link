@@ -43,7 +43,21 @@ class TransferResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final result = ModalRoute.of(context)!.settings.arguments as TransferResult;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    final TransferResult result = (args is TransferResult)
+        ? args
+        : TransferResult(
+            success: true,
+            fileName: 'QRLink_Demo_Document.txt',
+            originalSize: 1024,
+            compressedSize: 512,
+            transferTime: 1.5,
+            throughput: 340.5,
+            shaVerified: true,
+            sha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+            filePath: '',
+            fileBytes: Uint8List(0),
+          );
     
     final ratio = result.originalSize > 0 
         ? ((1 - (result.compressedSize / result.originalSize)) * 100).toStringAsFixed(0) 

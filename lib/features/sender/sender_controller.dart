@@ -1,11 +1,8 @@
-import 'dart:io';
 import 'dart:typed_data';
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
-import 'package:crypto/crypto.dart';
 import '../../core/models/packet.dart';
 import '../../core/services/compression_service.dart';
 import '../../core/services/encryption_service.dart';
@@ -26,7 +23,6 @@ enum SenderStatus {
 }
 
 class SenderState {
-  final File? selectedFile;
   final String? fileName;
   final int fileSize;
   final Uint8List? fileBytes;
@@ -50,7 +46,6 @@ class SenderState {
   final String? errorMessage;
 
   SenderState({
-    this.selectedFile,
     this.fileName,
     this.fileSize = 0,
     this.fileBytes,
@@ -65,7 +60,7 @@ class SenderState {
     this.currentFrameIndex = 0,
     this.totalChunks = 0,
     this.sessionId = '',
-    this.fps = 15,
+    this.fps = 10,
     this.isLooping = true,
     this.isPaused = false,
     this.status = SenderStatus.idle,
@@ -75,7 +70,6 @@ class SenderState {
   });
 
   SenderState copyWith({
-    File? selectedFile,
     String? fileName,
     int? fileSize,
     Uint8List? fileBytes,
@@ -99,7 +93,6 @@ class SenderState {
     String? errorMessage,
   }) {
     return SenderState(
-      selectedFile: selectedFile ?? this.selectedFile,
       fileName: fileName ?? this.fileName,
       fileSize: fileSize ?? this.fileSize,
       fileBytes: fileBytes ?? this.fileBytes,
@@ -124,11 +117,9 @@ class SenderState {
     );
   }
 
-  /// Human-readable compressed size display
   String get compressedSizeDisplay => BinaryUtils.formatSize(compressedSize);
   String get fileSizeDisplay => BinaryUtils.formatSize(fileSize);
 
-  /// Compression ratio as a percentage
   double get compressionRatio =>
       fileSize > 0 ? (1.0 - compressedSize / fileSize) * 100 : 0;
 }
@@ -136,13 +127,26 @@ class SenderState {
 class SenderController extends StateNotifier<SenderState> {
   SenderController()
       : super(SenderState(
-            sessionId: const Uuid().v4().substring(0, 8).toUpperCase()));
+            sessionId: (1000 + Random().nextInt(9000)).toString()));
 
   final _compressionService = CompressionService();
   final _encryptionService = EncryptionService();
   final _chunkerService = ChunkerService();
 
-  /// Pick a file from device storage
+  void setFileBytes({
+    required String name,
+    required int size,
+    required Uint8List bytes,
+  }) {
+    state = state.copyWith(
+      fileName: name,
+      fileSize: size,
+      fileBytes: bytes,
+      status: SenderStatus.idle,
+      errorMessage: null,
+    );
+  }
+
   Future<void> selectFile() async {
     state = state.copyWith(status: SenderStatus.selecting);
     try {
@@ -153,23 +157,13 @@ class SenderController extends StateNotifier<SenderState> {
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        final bytes = file.bytes;
-        final path = file.path;
-
-        Uint8List fileBytes;
-        if (bytes != null) {
-          fileBytes = bytes;
-        } else if (path != null) {
-          fileBytes = await File(path).readAsBytes();
-        } else {
-          throw Exception('Could not read file data');
-        }
+        final bytes = file.bytes ?? Uint8List(0);
+        final size = bytes.isNotEmpty ? bytes.length : file.size;
 
         state = state.copyWith(
-          selectedFile: path != null ? File(path) : null,
           fileName: file.name,
-          fileSize: fileBytes.length,
-          fileBytes: fileBytes,
+          fileSize: size,
+          fileBytes: bytes,
           status: SenderStatus.idle,
           errorMessage: null,
         );
@@ -184,20 +178,27 @@ class SenderController extends StateNotifier<SenderState> {
     }
   }
 
-  /// Full transfer pipeline: compress → encrypt → SHA-256 → chunk → build packets → generate frames
   Future<void> startTransfer({
     String? passphrase,
     bool encrypt = false,
-    int chunkSize = 1000,
+    String compression = 'Auto',
+    int chunkSize = 600,
   }) async {
-    if (state.fileBytes == null) return;
+    if (state.fileBytes == null || state.fileBytes!.isEmpty) {
+      state = state.copyWith(errorMessage: 'Please select a file first.');
+      return;
+    }
 
     try {
+      final newSessionId = (1000 + Random().nextInt(9000)).toString();
       state = state.copyWith(
         encrypted: encrypt,
         passphrase: passphrase,
-        sessionId: const Uuid().v4().substring(0, 8).toUpperCase(),
+        compressionAlgorithm: compression,
+        sessionId: newSessionId,
         errorMessage: null,
+        status: SenderStatus.compressing,
+        progress: 0.1,
       );
 
       // Step 1: Compress
@@ -207,17 +208,17 @@ class SenderController extends StateNotifier<SenderState> {
       Uint8List dataToChunk;
       if (encrypt && passphrase != null && passphrase.isNotEmpty) {
         await _encrypt(passphrase);
-        dataToChunk = state.encryptedBytes!;
+        dataToChunk = state.encryptedBytes ?? state.compressedBytes!;
       } else {
         state = state.copyWith(encryptedBytes: state.compressedBytes);
         dataToChunk = state.compressedBytes!;
       }
 
-      // Step 3: Compute SHA-256 of the data that will be chunked
+      // Step 3: Compute SHA-256
       state = state.copyWith(progress: 0.5);
-      final sha256Hash = IntegrityService.computeSha256Hex(dataToChunk);
+      final sha256Hex = IntegrityService.computeSha256Hex(dataToChunk);
       final sha256Bytes = IntegrityService.computeSha256(dataToChunk);
-      state = state.copyWith(sha256Hash: sha256Hash);
+      state = state.copyWith(sha256Hash: sha256Hex);
 
       // Step 4: Split into chunks
       await _chunk(dataToChunk, chunkSize);
@@ -232,13 +233,13 @@ class SenderController extends StateNotifier<SenderState> {
     } catch (e) {
       state = state.copyWith(
         status: SenderStatus.idle,
-        errorMessage: 'Transfer failed: $e',
+        errorMessage: 'Transfer processing failed: $e',
       );
     }
   }
 
   Future<void> _compress() async {
-    state = state.copyWith(status: SenderStatus.compressing, progress: 0.1);
+    state = state.copyWith(status: SenderStatus.compressing, progress: 0.2);
 
     final algo = state.compressionAlgorithm == 'GZip'
         ? CompressionAlgorithm.gzip
@@ -249,89 +250,56 @@ class SenderController extends StateNotifier<SenderState> {
     state = state.copyWith(
       compressedBytes: result.bytes,
       compressedSize: result.compressedSize,
-      progress: 0.3,
+      progress: 0.35,
     );
   }
 
   Future<void> _encrypt(String passphrase) async {
-    state = state.copyWith(status: SenderStatus.encrypting, progress: 0.4);
+    state = state.copyWith(status: SenderStatus.encrypting, progress: 0.45);
     final encrypted =
         await _encryptionService.encrypt(state.compressedBytes!, passphrase);
     state = state.copyWith(encryptedBytes: encrypted);
   }
 
   Future<void> _chunk(Uint8List data, int chunkSize) async {
-    state = state.copyWith(status: SenderStatus.chunking, progress: 0.6);
+    state = state.copyWith(status: SenderStatus.chunking, progress: 0.65);
     final chunks = _chunkerService.splitIntoChunks(data, chunkSize: chunkSize);
-    state = state.copyWith(chunks: chunks, totalChunks: chunks.length);
+    final effectiveChunks = chunks.isEmpty ? [data] : chunks;
+    state = state.copyWith(chunks: effectiveChunks, totalChunks: effectiveChunks.length);
   }
 
   Future<void> _buildPacketsAndGenerateFrames(Uint8List fileSha256) async {
-    state = state.copyWith(status: SenderStatus.generating, progress: 0.8);
+    state = state.copyWith(status: SenderStatus.generating, progress: 0.85);
 
     final List<Uint8List> packetBytes = [];
-    for (int i = 0; i < state.chunks.length; i++) {
+    final total = state.chunks.length;
+    for (int i = 0; i < total; i++) {
       final packet = Packet.build(
         chunkId: i,
-        totalChunks: state.chunks.length,
+        totalChunks: total,
         payload: state.chunks[i],
-        fileSha256: i == 0 ? fileSha256 : Uint8List(32), // SHA-256 only in chunk 0
+        fileSha256: i == 0 ? fileSha256 : Uint8List(32),
         encrypted: state.encrypted,
-        isLast: i == state.chunks.length - 1,
+        isLast: i == total - 1,
         compressionType: CompressionType.gzip,
         sessionId: state.sessionId,
       );
       packetBytes.add(packet.toBytes());
     }
 
-    // Generate base64url frames
     final generator = QRGeneratorService();
     final frames = generator.generateFrames(packetBytes);
 
     state = state.copyWith(qrFrames: frames);
   }
 
-  /// Advance to next QR frame (called by display timer)
-  void advanceFrame() {
-    if (state.isPaused || state.qrFrames.isEmpty) return;
-
-    int nextIndex = state.currentFrameIndex + 1;
-    if (nextIndex >= state.qrFrames.length) {
-      if (state.isLooping) {
-        nextIndex = 0;
-      } else {
-        state = state.copyWith(status: SenderStatus.complete);
-        return;
-      }
-    }
-    state = state.copyWith(currentFrameIndex: nextIndex);
-  }
-
-  void pause() => state = state.copyWith(isPaused: true);
-  void resume() => state = state.copyWith(isPaused: false);
+  void togglePause() => state = state.copyWith(isPaused: !state.isPaused);
+  void toggleLoop() => state = state.copyWith(isLooping: !state.isLooping);
   void setFps(int fps) => state = state.copyWith(fps: fps);
-  void setLooping(bool looping) => state = state.copyWith(isLooping: looping);
-
-  void setCompressionAlgorithm(String algo) =>
-      state = state.copyWith(compressionAlgorithm: algo);
-
-  /// Reorder frames to prioritize missing chunks for retransmission
-  void handleRetransmitRequest(Set<int> missingChunks) {
-    if (state.qrFrames.isEmpty || missingChunks.isEmpty) return;
-
-    final generator = QRGeneratorService();
-    final reordered =
-        generator.reorderForRetransmit(state.qrFrames, missingChunks);
-
-    state = state.copyWith(
-      qrFrames: reordered,
-      currentFrameIndex: 0,
-    );
-  }
 
   void reset() {
     state = SenderState(
-      sessionId: const Uuid().v4().substring(0, 8).toUpperCase(),
+      sessionId: (1000 + Random().nextInt(9000)).toString(),
     );
   }
 }

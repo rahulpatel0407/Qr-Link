@@ -110,6 +110,7 @@ class _QrDisplayWidgetState extends State<QrDisplayWidget> with SingleTickerProv
                     ),
                     child: QrImageView(
                       data: currentFrame,
+                      size: 260,
                       version: QrVersions.auto,
                       errorCorrectionLevel: QrErrorCorrectLevel.M,
                       eyeStyle: const QrEyeStyle(
@@ -128,9 +129,9 @@ class _QrDisplayWidgetState extends State<QrDisplayWidget> with SingleTickerProv
                   animation: _scanAnimController,
                   builder: (context, child) {
                     return Positioned(
-                      top: _scanAnimController.value * 300, // Adjust based on QR size
+                      top: _scanAnimController.value * 260,
                       child: Container(
-                        width: 300,
+                        width: 260,
                         height: 2,
                         decoration: BoxDecoration(
                           color: AppColors.amber.withOpacity(0.8),

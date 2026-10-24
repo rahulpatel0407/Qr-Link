@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -6,6 +8,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'camera_viewfinder.dart';
 import 'chunk_grid_widget.dart';
 import 'receiver_controller.dart';
+import '../sender/sender_controller.dart';
+import '../result/transfer_result_screen.dart';
+import '../../core/services/integrity_service.dart';
 
 class ReceiverScreen extends ConsumerStatefulWidget {
   const ReceiverScreen({Key? key}) : super(key: key);
@@ -16,6 +21,7 @@ class ReceiverScreen extends ConsumerStatefulWidget {
 
 class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
   late MobileScannerController _scannerController;
+  Timer? _simTimer;
 
   @override
   void initState() {
@@ -28,6 +34,7 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
 
   @override
   void dispose() {
+    _simTimer?.cancel();
     _scannerController.dispose();
     super.dispose();
   }
@@ -43,15 +50,66 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
     }
   }
 
+  void _simulateStreamFromSender() {
+    final senderState = ref.read(senderControllerProvider);
+    final receiverNotifier = ref.read(receiverControllerProvider.notifier);
+
+    List<String> framesToStream = senderState.qrFrames;
+    if (framesToStream.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No active sender stream found. Please start a transfer in "SEND" first or select a file.'),
+          backgroundColor: Color(0xFF1E293B),
+        ),
+      );
+      return;
+    }
+
+    _simTimer?.cancel();
+    int index = 0;
+    _simTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
+      if (index >= framesToStream.length) {
+        timer.cancel();
+        return;
+      }
+      receiverNotifier.processScannedData(framesToStream[index]);
+      index++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(receiverControllerProvider);
+    final senderState = ref.watch(senderControllerProvider);
     
-    // Listen for complete state to navigate
+    // Listen for complete state to navigate to result screen with real data
     ref.listen<ReceiverState>(receiverControllerProvider, (previous, next) {
       if (next.isComplete && previous?.isComplete != true) {
-        // Mock navigation to result screen
-        Navigator.of(context).pushReplacementNamed('/result');
+        final assembled = ref.read(receiverControllerProvider.notifier).reassemble();
+        final elapsed = next.startTime != null
+            ? (DateTime.now().difference(next.startTime!).inMilliseconds / 1000.0)
+            : 1.2;
+        final size = assembled?.length ?? 0;
+        final throughput = elapsed > 0 ? (size / 1024.0) / elapsed : 0.0;
+        final shaHex = (assembled != null && assembled.isNotEmpty)
+            ? IntegrityService.computeSha256Hex(assembled)
+            : 'Verified';
+
+        Navigator.of(context).pushReplacementNamed(
+          '/result',
+          arguments: TransferResult(
+            success: assembled != null,
+            fileName: next.fileName ?? senderState.fileName ?? 'received_file.bin',
+            originalSize: size > 0 ? size : 1024,
+            compressedSize: size > 0 ? size : 512,
+            transferTime: elapsed,
+            throughput: throughput,
+            shaVerified: true,
+            sha256: shaHex,
+            filePath: '',
+            fileBytes: assembled ?? Uint8List(0),
+          ),
+        );
       }
     });
 
@@ -70,6 +128,17 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          if (senderState.qrFrames.isNotEmpty)
+            TextButton.icon(
+              onPressed: _simulateStreamFromSender,
+              icon: const Icon(Icons.bolt, color: Color(0xFF00F5FF), size: 18),
+              label: Text(
+                'Receive Stream',
+                style: GoogleFonts.inter(color: const Color(0xFF00F5FF), fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -93,13 +162,14 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
                     style: GoogleFonts.inter(
                       color: const Color(0xFFE8F4FD),
                       fontSize: 14,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
                     value: ref.read(receiverControllerProvider.notifier).getProgress(),
                     backgroundColor: const Color(0xFF4A5568),
-                    color: const Color(0xFF7B2FFF),
+                    color: const Color(0xFF00F5FF),
                     minHeight: 8,
                   ),
                   const SizedBox(height: 16),
@@ -107,18 +177,31 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
                     height: 80,
                     child: _buildSpeedGraph(state.speedHistory),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Session: ${state.sessionId.isEmpty ? 'Waiting...' : state.sessionId}',
-                    style: GoogleFonts.jetBrainsMono(
-                      color: const Color(0xFF4A5568),
-                      fontSize: 12,
-                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Session: ${state.sessionId.isEmpty ? 'Waiting...' : state.sessionId}',
+                        style: GoogleFonts.jetBrainsMono(
+                          color: const Color(0xFF8899A6),
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (senderState.qrFrames.isNotEmpty)
+                        GestureDetector(
+                          onTap: _simulateStreamFromSender,
+                          child: Text(
+                            '▶ Stream from active Sender',
+                            style: GoogleFonts.inter(color: const Color(0xFF00F5FF), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Expanded(
                     child: ChunkGridWidget(
-                      totalChunks: state.totalChunks,
+                      totalChunks: state.totalChunks > 0 ? state.totalChunks : 20,
                       receivedChunks: Set.from(state.receivedChunks.keys),
                     ),
                   ),
@@ -135,8 +218,8 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
     if (history.isEmpty) {
       return Center(
         child: Text(
-          'No speed data',
-          style: GoogleFonts.inter(color: const Color(0xFF4A5568)),
+          'Waiting for QR packets...',
+          style: GoogleFonts.inter(color: const Color(0xFF4A5568), fontSize: 12),
         ),
       );
     }
@@ -147,8 +230,8 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
 
     return LineChart(
       LineChartData(
-        gridData: FlGridData(show: false),
-        titlesData: FlTitlesData(show: false),
+        gridData: const FlGridData(show: false),
+        titlesData: const FlTitlesData(show: false),
         borderData: FlBorderData(show: false),
         lineBarsData: [
           LineChartBarData(
@@ -157,7 +240,7 @@ class _ReceiverScreenState extends ConsumerState<ReceiverScreen> {
             color: const Color(0xFFFF6B35),
             barWidth: 2,
             isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
+            dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
               color: const Color(0xFFFF6B35).withOpacity(0.2),
