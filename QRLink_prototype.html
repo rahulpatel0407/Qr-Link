@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QRLink — Offline File Transfer via Animated QR Codes</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black:   #050810;
+    --slate:   #0D1525;
+    --panel:   #111827;
+    --cyan:    #00F5FF;
+    --violet:  #7B2FFF;
+    --amber:   #FF6B35;
+    --white:   #E8F4FD;
+    --muted:   #4A5568;
+    --border:  rgba(0,245,255,0.12);
+    --glow:    0 0 30px rgba(0,245,255,0.25);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--black); }
+  ::-webkit-scrollbar-thumb { background: var(--cyan); border-radius: 2px; }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 60px;
+    background: rgba(5,8,16,0.7);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    transition: all 0.3s ease;
+  }
+  .nav-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900; font-size: 1.4rem;
+    color: var(--cyan);
+    letter-spacing: 3px;
+    text-shadow: var(--glow);
+  }
+  .nav-logo span { color: var(--white); }
+  .nav-links { display: flex; gap: 36px; list-style: none; }
+  .nav-links a {
+    font-size: 0.78rem; font-weight: 500; letter-spacing: 1.5px;
+    color: var(--muted); text-decoration: none; text-transform: uppercase;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--cyan); }
+  .nav-cta {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 2px;
+    padding: 10px 24px; border: 1px solid var(--cyan);
+    color: var(--cyan); background: transparent;
+    cursor: pointer; text-transform: uppercase;
+    transition: all 0.3s;
+    clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
+  }
+  .nav-cta:hover {
+    background: var(--cyan); color: var(--black);
+    box-shadow: var(--glow);
+  }
+
+  /* ── CANVAS PARTICLES ── */
+  #particle-canvas {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 0;
+    opacity: 0.4;
+  }
+
+  /* ── HERO ── */
+  #hero {
+    position: relative; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 120px 60px 60px;
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 80px; align-items: center;
+    max-width: 1200px; width: 100%; z-index: 1;
+  }
+  .hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; color: var(--amber);
+    letter-spacing: 3px; text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .hero-eyebrow::before {
+    content: ''; display: inline-block;
+    width: 32px; height: 1px; background: var(--amber);
+  }
+  .hero-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(2.4rem, 5vw, 4rem);
+    font-weight: 900; line-height: 1.05;
+    letter-spacing: -1px;
+    margin-bottom: 28px;
+  }
+  .hero-title .accent { color: var(--cyan); }
+  .hero-title .accent2 { color: var(--violet); }
+  .hero-desc {
+    font-size: 1rem; line-height: 1.8;
+    color: rgba(232,244,253,0.65);
+    max-width: 440px; margin-bottom: 40px;
+  }
+  .hero-stats {
+    display: flex; gap: 40px; margin-bottom: 48px;
+  }
+  .stat-item { display: flex; flex-direction: column; gap: 4px; }
+  .stat-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.6rem; font-weight: 700; color: var(--cyan);
+    text-shadow: var(--glow);
+  }
+  .stat-label { font-size: 0.72rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  .hero-btns { display: flex; gap: 16px; }
+  .btn-primary {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+    padding: 14px 32px; background: var(--cyan); color: var(--black);
+    border: none; cursor: pointer; text-transform: uppercase;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    transition: all 0.3s;
+  }
+  .btn-primary:hover { background: #fff; box-shadow: 0 0 40px rgba(0,245,255,0.5); transform: translateY(-2px); }
+  .btn-secondary {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+    padding: 14px 32px; background: transparent;
+    border: 1px solid var(--violet); color: var(--violet);
+    cursor: pointer; text-transform: uppercase;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    transition: all 0.3s;
+  }
+  .btn-secondary:hover { background: var(--violet); color: #fff; }
+
+  /* ── QR DEMO VISUAL ── */
+  .hero-visual { display: flex; justify-content: center; align-items: center; position: relative; }
+  .qr-wrapper {
+    position: relative; width: 340px; height: 340px;
+  }
+  .qr-ring {
+    position: absolute; inset: -20px;
+    border: 1px solid var(--cyan);
+    border-radius: 50%;
+    animation: spin-slow 12s linear infinite;
+    opacity: 0.3;
+  }
+  .qr-ring-2 {
+    position: absolute; inset: -40px;
+    border: 1px dashed var(--violet);
+    border-radius: 50%;
+    animation: spin-slow 20s linear infinite reverse;
+    opacity: 0.2;
+  }
+  .qr-corner {
+    position: absolute; width: 24px; height: 24px;
+    border-color: var(--cyan); border-style: solid;
+  }
+  .qr-corner.tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+  .qr-corner.tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+  .qr-corner.bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+  .qr-corner.br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+  .qr-canvas-container {
+    width: 100%; height: 100%;
+    background: var(--slate);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  canvas#qr-demo { image-rendering: pixelated; }
+  .scan-line {
+    position: absolute; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    animation: scan 2.4s ease-in-out infinite;
+    box-shadow: 0 0 12px var(--cyan);
+  }
+  .frame-counter {
+    position: absolute; bottom: 12px; right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--cyan);
+    background: rgba(0,0,0,0.6); padding: 4px 8px;
+  }
+  .data-packets {
+    position: absolute; top: 50%; right: -80px;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .packet {
+    width: 48px; height: 8px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+    border-radius: 4px;
+    animation: packet-fly 1.8s ease-in-out infinite;
+    opacity: 0;
+  }
+  .packet:nth-child(2) { animation-delay: 0.4s; width: 36px; }
+  .packet:nth-child(3) { animation-delay: 0.8s; width: 24px; }
+
+  @keyframes scan { 0%,100% { top: 0; opacity: 1; } 50% { top: calc(100% - 2px); opacity: 0.7; } }
+  @keyframes spin-slow { to { transform: rotate(360deg); } }
+  @keyframes packet-fly { 0% { opacity: 0; transform: translateX(0); } 50% { opacity: 1; } 100% { opacity: 0; transform: translateX(60px); } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px rgba(0,245,255,0.2); } 50% { box-shadow: 0 0 40px rgba(0,245,255,0.5); } }
+
+  .hero-left > * { animation: fadeUp 0.8s ease both; }
+  .hero-left > *:nth-child(1) { animation-delay: 0.2s; }
+  .hero-left > *:nth-child(2) { animation-delay: 0.35s; }
+  .hero-left > *:nth-child(3) { animation-delay: 0.5s; }
+  .hero-left > *:nth-child(4) { animation-delay: 0.65s; }
+  .hero-left > *:nth-child(5) { animation-delay: 0.8s; }
+  .hero-visual { animation: fadeIn 1.2s ease 0.6s both; }
+
+  /* ── SECTION SHARED ── */
+  section { position: relative; z-index: 1; }
+  .section-inner { max-width: 1200px; margin: 0 auto; padding: 0 60px; }
+  .section-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--amber); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .section-eyebrow::after { content: ''; flex: 1; max-width: 48px; height: 1px; background: var(--amber); }
+  .section-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 700; margin-bottom: 16px; line-height: 1.2;
+  }
+  .section-sub {
+    font-size: 0.95rem; line-height: 1.8;
+    color: rgba(232,244,253,0.55); max-width: 580px;
+    margin-bottom: 64px;
+  }
+  .reveal {
+    opacity: 0; transform: translateY(40px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+  .reveal.visible { opacity: 1; transform: none; }
+
+  /* ── ARCHITECTURE ── */
+  #architecture { padding: 120px 0; }
+  .arch-pipeline {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    gap: 32px; align-items: start;
+  }
+  .arch-side { display: flex; flex-direction: column; gap: 12px; }
+  .arch-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; padding: 6px 16px;
+    display: inline-block; margin-bottom: 8px;
+  }
+  .arch-label.sender { background: rgba(0,245,255,0.1); color: var(--cyan); border-left: 2px solid var(--cyan); }
+  .arch-label.receiver { background: rgba(123,47,255,0.1); color: var(--violet); border-left: 2px solid var(--violet); }
+  .arch-step {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 0.85rem;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .arch-step:hover {
+    border-color: var(--cyan);
+    background: rgba(0,245,255,0.04);
+    transform: translateX(4px);
+    box-shadow: -2px 0 0 var(--cyan);
+  }
+  .receiver-side .arch-step:hover { transform: translateX(-4px); box-shadow: 2px 0 0 var(--violet); border-color: var(--violet); }
+  .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+    min-width: 24px;
+  }
+  .step-icon { font-size: 1.1rem; min-width: 24px; text-align: center; }
+  .step-text { font-size: 0.82rem; color: rgba(232,244,253,0.75); }
+  .arch-middle {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; padding-top: 48px;
+    min-width: 120px;
+  }
+  .qr-beam {
+    width: 2px; height: 200px;
+    background: linear-gradient(to bottom, var(--cyan), var(--violet));
+    position: relative; overflow: hidden;
+  }
+  .beam-dot {
+    position: absolute; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--cyan);
+    left: -2px;
+    animation: beam-travel 1.5s ease-in-out infinite;
+  }
+  .beam-dot:nth-child(2) { animation-delay: 0.5s; background: var(--violet); }
+  .beam-dot:nth-child(3) { animation-delay: 1s; }
+  @keyframes beam-travel { 0% { top: 0; opacity: 1; } 100% { top: 100%; opacity: 0; } }
+  .arch-qr-icon {
+    width: 64px; height: 64px;
+    background: var(--panel); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.8rem;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .arch-label-mid {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    text-align: center; letter-spacing: 1px;
+  }
+
+  /* ── PHASES ── */
+  #phases { padding: 120px 0; background: var(--slate); }
+  .phases-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .phase-card {
+    padding: 28px; background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 2px; position: relative; overflow: hidden;
+    transition: all 0.4s;
+    cursor: default;
+  }
+  .phase-card::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    transform: scaleX(0); transform-origin: left;
+    transition: transform 0.4s ease;
+  }
+  .phase-card:hover { border-color: rgba(0,245,255,0.3); transform: translateY(-4px); box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+  .phase-card:hover::before { transform: scaleX(1); }
+  .phase-week {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--amber);
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .phase-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.9rem; font-weight: 700; color: var(--white);
+    margin-bottom: 14px; line-height: 1.3;
+  }
+  .phase-items { display: flex; flex-direction: column; gap: 6px; }
+  .phase-item {
+    font-size: 0.78rem; color: rgba(232,244,253,0.6);
+    display: flex; align-items: flex-start; gap: 8px; line-height: 1.5;
+  }
+  .phase-item::before { content: '▸'; color: var(--cyan); font-size: 0.6rem; margin-top: 3px; flex-shrink: 0; }
+  .phase-num {
+    position: absolute; bottom: 16px; right: 16px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.8rem; font-weight: 900;
+    color: rgba(255,255,255,0.04);
+    line-height: 1;
+  }
+
+  /* ── TECH STACK ── */
+  #tech { padding: 120px 0; }
+  .tech-categories { display: flex; flex-direction: column; gap: 48px; }
+  .tech-category { display: flex; gap: 40px; align-items: flex-start; }
+  .tech-cat-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--cyan);
+    min-width: 120px; padding-top: 8px;
+    border-top: 1px solid var(--cyan);
+  }
+  .tech-pills { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; padding: 8px 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    color: rgba(232,244,253,0.75);
+    transition: all 0.3s; cursor: default;
+    clip-path: polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%);
+  }
+  .pill:hover {
+    background: rgba(0,245,255,0.08);
+    border-color: var(--cyan); color: var(--cyan);
+    box-shadow: var(--glow);
+  }
+  .pill.violet:hover { background: rgba(123,47,255,0.1); border-color: var(--violet); color: var(--violet); box-shadow: 0 0 20px rgba(123,47,255,0.3); }
+  .pill.amber:hover { background: rgba(255,107,53,0.1); border-color: var(--amber); color: var(--amber); }
+
+  /* ── PERFORMANCE ── */
+  #performance { padding: 120px 0; background: var(--slate); }
+  .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
+  .perf-items { display: flex; flex-direction: column; gap: 28px; }
+  .perf-bar-wrap { display: flex; flex-direction: column; gap: 10px; }
+  .perf-bar-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .perf-bar-name { font-size: 0.85rem; color: var(--white); font-weight: 500; }
+  .perf-bar-range { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--cyan); }
+  .perf-bar-track {
+    height: 6px; background: rgba(255,255,255,0.06);
+    border-radius: 3px; overflow: hidden;
+  }
+  .perf-bar-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    width: 0; transition: width 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: 0 0 10px rgba(0,245,255,0.4);
+  }
+  .perf-note { font-size: 0.72rem; color: var(--muted); }
+  .speed-display {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px;
+  }
+  .speed-ring {
+    position: relative; width: 240px; height: 240px;
+  }
+  .speed-ring svg { transform: rotate(-90deg); }
+  .speed-ring-val {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .speed-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.6rem; font-weight: 900; color: var(--cyan);
+    text-shadow: var(--glow);
+    animation: count-up 2s ease 0.5s both;
+  }
+  .speed-unit { font-size: 0.75rem; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .speed-desc { font-size: 0.78rem; color: var(--muted); text-align: center; }
+  @keyframes count-up { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+
+  /* ── FEATURES ── */
+  #features { padding: 120px 0; }
+  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .feature-card {
+    padding: 32px 28px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 2px; transition: all 0.4s; cursor: default;
+    position: relative;
+  }
+  .feature-card::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(0,245,255,0.03), transparent);
+    opacity: 0; transition: opacity 0.4s;
+  }
+  .feature-card:hover { border-color: rgba(0,245,255,0.25); transform: translateY(-6px); box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
+  .feature-card:hover::after { opacity: 1; }
+  .feature-icon {
+    width: 48px; height: 48px;
+    background: rgba(0,245,255,0.08); border: 1px solid rgba(0,245,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; margin-bottom: 20px;
+    transition: all 0.3s;
+  }
+  .feature-card:hover .feature-icon {
+    background: rgba(0,245,255,0.14);
+    box-shadow: 0 0 20px rgba(0,245,255,0.2);
+  }
+  .feature-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.88rem; font-weight: 700; margin-bottom: 12px; line-height: 1.3;
+  }
+  .feature-desc { font-size: 0.82rem; line-height: 1.7; color: rgba(232,244,253,0.55); }
+  .feature-tag {
+    margin-top: 16px; display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; padding: 4px 10px;
+    background: rgba(123,47,255,0.1); color: var(--violet);
+    border: 1px solid rgba(123,47,255,0.2); letter-spacing: 1px;
+  }
+
+  /* ── FUTURE ── */
+  #future { padding: 120px 0; background: var(--slate); }
+  .future-list { display: flex; flex-direction: column; gap: 0; }
+  .future-item {
+    display: flex; align-items: center; gap: 28px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+    transition: all 0.3s; cursor: default;
+  }
+  .future-item:hover { padding-left: 16px; border-bottom-color: var(--cyan); }
+  .future-item:hover .future-num { color: var(--cyan); }
+  .future-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem; font-weight: 700; color: var(--muted);
+    min-width: 40px; transition: color 0.3s;
+  }
+  .future-text { font-size: 0.95rem; color: rgba(232,244,253,0.7); line-height: 1.6; }
+  .future-badge {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; padding: 4px 12px;
+    border: 1px solid var(--border); color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  /* ── CTA ── */
+  #cta {
+    padding: 160px 0;
+    text-align: center;
+    position: relative; overflow: hidden;
+  }
+  .cta-bg {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 50% 50%, rgba(0,245,255,0.06), transparent);
+    pointer-events: none;
+  }
+  #cta .section-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
+  .cta-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 900; line-height: 1.1;
+    max-width: 700px;
+  }
+  .cta-title .accent { color: var(--cyan); }
+  .cta-sub {
+    font-size: 0.95rem; color: rgba(232,244,253,0.5);
+    max-width: 460px; line-height: 1.8;
+  }
+  .cta-grid { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .cta-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem; color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 40px 60px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: relative; z-index: 1;
+  }
+  .footer-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem; font-weight: 900; color: var(--cyan); letter-spacing: 3px;
+  }
+  .footer-logo span { color: rgba(232,244,253,0.3); }
+  .footer-copy {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+  }
+  .footer-links { display: flex; gap: 24px; }
+  .footer-links a {
+    font-size: 0.72rem; color: var(--muted);
+    text-decoration: none; transition: color 0.2s;
+  }
+  .footer-links a:hover { color: var(--cyan); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    nav { padding: 16px 24px; }
+    .nav-links { display: none; }
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero-visual { order: -1; }
+    .qr-wrapper { width: 240px; height: 240px; }
+    .section-inner { padding: 0 24px; }
+    .arch-pipeline { grid-template-columns: 1fr; }
+    .arch-middle { flex-direction: row; padding-top: 0; }
+    .qr-beam { width: 120px; height: 2px; background: linear-gradient(90deg, var(--cyan), var(--violet)); }
+    .phases-grid { grid-template-columns: 1fr; }
+    .perf-grid { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
+    .tech-category { flex-direction: column; gap: 12px; }
+    footer { flex-direction: column; gap: 16px; text-align: center; }
+  }
+
+  /* ── DIVIDER ── */
+  .section-divider {
+    height: 1px; background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent);
+    margin: 0 60px;
+  }
+</style>
+</head>
+<body>
+
+<!-- PARTICLES -->
+<canvas id="particle-canvas"></canvas>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">QR<span>Link</span></div>
+  <ul class="nav-links">
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#phases">Phases</a></li>
+    <li><a href="#tech">Tech Stack</a></li>
+    <li><a href="#performance">Performance</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#future">Roadmap</a></li>
+  </ul>
+  <button class="nav-cta">Get Started</button>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-grid">
+    <div class="hero-left">
+      <div class="hero-eyebrow">Zero Connectivity. Full Transfer.</div>
+      <h1 class="hero-title">
+        Offline Files<br>
+        via <span class="accent">Animated</span><br>
+        <span class="accent2">QR Codes</span>
+      </h1>
+      <p class="hero-desc">
+        Transfer files between any two devices — no internet, no Bluetooth, no Wi-Fi, no NFC, no USB — using a visual channel of high-speed animated QR codes.
+      </p>
+      <div class="hero-stats">
+        <div class="stat-item">
+          <span class="stat-val" id="speed-counter">500</span>
+          <span class="stat-label">KB/s Target</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-val">60</span>
+          <span class="stat-label">FPS Display</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-val">V-40</span>
+          <span class="stat-label">QR Version</span>
+        </div>
+      </div>
+      <div class="hero-btns">
+        <button class="btn-primary">View Architecture</button>
+        <button class="btn-secondary">Explore Stack</button>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="qr-wrapper">
+        <div class="qr-ring"></div>
+        <div class="qr-ring-2"></div>
+        <div class="qr-corner tl"></div>
+        <div class="qr-corner tr"></div>
+        <div class="qr-corner bl"></div>
+        <div class="qr-corner br"></div>
+        <div class="qr-canvas-container">
+          <canvas id="qr-demo" width="280" height="280"></canvas>
+          <div class="scan-line"></div>
+          <div class="frame-counter" id="frame-counter">FRAME 001 / 048</div>
+        </div>
+        <div class="data-packets">
+          <div class="packet"></div>
+          <div class="packet"></div>
+          <div class="packet"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">System Design</div>
+      <h2 class="section-title">End-to-End Pipeline</h2>
+      <p class="section-sub">
+        A fully self-contained visual communication protocol — from raw file to recovered bytes, using only a screen and a camera.
+      </p>
+    </div>
+    <div class="arch-pipeline reveal">
+      <div class="arch-side">
+        <div class="arch-label sender">Sender</div>
+        <div class="arch-step"><span class="step-num">01</span><span class="step-icon">📂</span><span class="step-text">Select source file from device storage</span></div>
+        <div class="arch-step"><span class="step-num">02</span><span class="step-icon">🗜</span><span class="step-text">Compress with Zstd / Brotli / Gzip</span></div>
+        <div class="arch-step"><span class="step-num">03</span><span class="step-icon">🔐</span><span class="step-text">AES-256 encryption (optional)</span></div>
+        <div class="arch-step"><span class="step-num">04</span><span class="step-icon">✂️</span><span class="step-text">Split into chunks with ID + CRC32</span></div>
+        <div class="arch-step"><span class="step-num">05</span><span class="step-icon">⬛</span><span class="step-text">Generate Version-40 QR frames</span></div>
+        <div class="arch-step"><span class="step-num">06</span><span class="step-icon">🎞️</span><span class="step-text">Display animated QR at 30–60 FPS</span></div>
+      </div>
+
+      <div class="arch-middle">
+        <div class="arch-qr-icon">⬛</div>
+        <div class="qr-beam">
+          <div class="beam-dot"></div>
+          <div class="beam-dot"></div>
+          <div class="beam-dot"></div>
+        </div>
+        <div class="arch-label-mid">VISUAL<br>CHANNEL</div>
+        <div class="arch-qr-icon" style="transform:scale(-1,1);">📷</div>
+      </div>
+
+      <div class="arch-side receiver-side">
+        <div class="arch-label receiver">Receiver</div>
+        <div class="arch-step"><span class="step-num">07</span><span class="step-icon">📷</span><span class="step-text">Capture frames via CameraX API</span></div>
+        <div class="arch-step"><span class="step-num">08</span><span class="step-icon">🔍</span><span class="step-text">Decode QR data with ZXing + ML Kit</span></div>
+        <div class="arch-step"><span class="step-num">09</span><span class="step-icon">🔁</span><span class="step-text">Track & recover only missing packets</span></div>
+        <div class="arch-step"><span class="step-num">10</span><span class="step-icon">🧩</span><span class="step-text">Reassemble ordered chunks</span></div>
+        <div class="arch-step"><span class="step-num">11</span><span class="step-icon">✅</span><span class="step-text">Verify SHA-256 checksum integrity</span></div>
+        <div class="arch-step"><span class="step-num">12</span><span class="step-icon">💾</span><span class="step-text">Decrypt → Decompress → Save file</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- PHASES -->
+<section id="phases">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">Development Timeline</div>
+      <h2 class="section-title">6-Week Build Plan</h2>
+      <p class="section-sub">Each week delivers a runnable milestone — from QR research to AI-optimized scanning.</p>
+    </div>
+    <div class="phases-grid">
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 1</div>
+        <div class="phase-title">Research & Foundation</div>
+        <div class="phase-items">
+          <div class="phase-item">Study QR code standards and version capacity</div>
+          <div class="phase-item">Research Reed–Solomon error correction</div>
+          <div class="phase-item">Benchmark camera frame rates on target devices</div>
+          <div class="phase-item">Evaluate ZXing vs ML Kit decode speed</div>
+        </div>
+        <div class="phase-num">01</div>
+      </div>
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 2</div>
+        <div class="phase-title">Compression & QR Generation</div>
+        <div class="phase-items">
+          <div class="phase-item">Integrate Zstd / Brotli / Gzip pipelines</div>
+          <div class="phase-item">Implement chunk splitting with CRC32 packets</div>
+          <div class="phase-item">Generate Version-40 QR frames in Flutter</div>
+          <div class="phase-item">Benchmark payload capacity per frame</div>
+        </div>
+        <div class="phase-num">02</div>
+      </div>
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 3</div>
+        <div class="phase-title">Transmission & Scanning</div>
+        <div class="phase-items">
+          <div class="phase-item">Build 30–60 FPS animated QR display engine</div>
+          <div class="phase-item">Implement CameraX real-time capture pipeline</div>
+          <div class="phase-item">Decode & buffer incoming QR frames</div>
+          <div class="phase-item">Handle frame drop tracking &amp; retransmit requests</div>
+        </div>
+        <div class="phase-num">03</div>
+      </div>
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 4</div>
+        <div class="phase-title">Reconstruction</div>
+        <div class="phase-items">
+          <div class="phase-item">Build packet re-ordering and assembly engine</div>
+          <div class="phase-item">Implement missing packet selective re-request</div>
+          <div class="phase-item">SHA-256 end-to-end integrity verification</div>
+          <div class="phase-item">Progress UI and transfer status reporting</div>
+        </div>
+        <div class="phase-num">04</div>
+      </div>
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 5</div>
+        <div class="phase-title">Encryption & Verification</div>
+        <div class="phase-items">
+          <div class="phase-item">AES-256 optional encryption layer</div>
+          <div class="phase-item">Passphrase / key-sharing UX flow</div>
+          <div class="phase-item">Full pipeline end-to-end integration testing</div>
+          <div class="phase-item">Edge case handling for corrupted frames</div>
+        </div>
+        <div class="phase-num">05</div>
+      </div>
+      <div class="phase-card reveal">
+        <div class="phase-week">Week 6</div>
+        <div class="phase-title">AI Optimization & Testing</div>
+        <div class="phase-items">
+          <div class="phase-item">TFLite blur detection for auto-retry</div>
+          <div class="phase-item">Adaptive QR density based on ambient light</div>
+          <div class="phase-item">Low-light enhancement with OpenCV</div>
+          <div class="phase-item">Performance benchmarking across devices</div>
+        </div>
+        <div class="phase-num">06</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- TECH STACK -->
+<section id="tech">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">Technology Stack</div>
+      <h2 class="section-title">Built on Proven Tools</h2>
+      <p class="section-sub">Every library chosen for minimal latency, cross-platform reach, and zero-dependency offline operation.</p>
+    </div>
+    <div class="tech-categories reveal">
+      <div class="tech-category">
+        <div class="tech-cat-label">Framework</div>
+        <div class="tech-pills">
+          <div class="pill">Flutter</div>
+          <div class="pill">Dart</div>
+          <div class="pill violet">CameraX</div>
+        </div>
+      </div>
+      <div class="tech-category">
+        <div class="tech-cat-label">QR & Vision</div>
+        <div class="tech-pills">
+          <div class="pill">ZXing</div>
+          <div class="pill">ML Kit</div>
+          <div class="pill violet">OpenCV</div>
+          <div class="pill">TensorFlow Lite</div>
+        </div>
+      </div>
+      <div class="tech-category">
+        <div class="tech-cat-label">Compression</div>
+        <div class="tech-pills">
+          <div class="pill amber">Zstd</div>
+          <div class="pill amber">Brotli</div>
+          <div class="pill amber">Gzip</div>
+        </div>
+      </div>
+      <div class="tech-category">
+        <div class="tech-cat-label">Security</div>
+        <div class="tech-pills">
+          <div class="pill violet">AES-256</div>
+          <div class="pill">CRC32</div>
+          <div class="pill">SHA-256</div>
+        </div>
+      </div>
+      <div class="tech-category">
+        <div class="tech-cat-label">Protocol</div>
+        <div class="tech-pills">
+          <div class="pill">Reed–Solomon ECC</div>
+          <div class="pill">QR Version 40</div>
+          <div class="pill amber">30–60 FPS</div>
+          <div class="pill violet">Selective Retransmit</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- PERFORMANCE -->
+<section id="performance">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">Benchmarks</div>
+      <h2 class="section-title">Expected Performance</h2>
+      <p class="section-sub">Speed varies by hardware, lighting, and QR density. These are real-world estimates, not lab ideals.</p>
+    </div>
+    <div class="perf-grid reveal">
+      <div class="perf-items">
+        <div class="perf-bar-wrap">
+          <div class="perf-bar-label">
+            <span class="perf-bar-name">Small Text File</span>
+            <span class="perf-bar-range">Instant</span>
+          </div>
+          <div class="perf-bar-track"><div class="perf-bar-fill" data-width="100"></div></div>
+          <div class="perf-note">≤ 1 KB — single QR frame</div>
+        </div>
+        <div class="perf-bar-wrap">
+          <div class="perf-bar-label">
+            <span class="perf-bar-name">Image (1–5 MB)</span>
+            <span class="perf-bar-range">10–40 s</span>
+          </div>
+          <div class="perf-bar-track"><div class="perf-bar-fill" data-width="72"></div></div>
+          <div class="perf-note">Post-compression, ~300 KB/s avg</div>
+        </div>
+        <div class="perf-bar-wrap">
+          <div class="perf-bar-label">
+            <span class="perf-bar-name">PDF Document (10 MB)</span>
+            <span class="perf-bar-range">30–90 s</span>
+          </div>
+          <div class="perf-bar-track"><div class="perf-bar-fill" data-width="52"></div></div>
+          <div class="perf-note">Depends on QR density &amp; hardware</div>
+        </div>
+        <div class="perf-bar-wrap">
+          <div class="perf-bar-label">
+            <span class="perf-bar-name">Peak Throughput (Optimized)</span>
+            <span class="perf-bar-range">100–500 KB/s</span>
+          </div>
+          <div class="perf-bar-track"><div class="perf-bar-fill" data-width="88"></div></div>
+          <div class="perf-note">Flagship devices, bright lighting, 60 FPS</div>
+        </div>
+      </div>
+      <div class="speed-display">
+        <div class="speed-ring">
+          <svg viewBox="0 0 240 240" width="240" height="240">
+            <circle cx="120" cy="120" r="100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="8"/>
+            <circle id="speed-arc" cx="120" cy="120" r="100" fill="none"
+              stroke="url(#speedGrad)" stroke-width="8"
+              stroke-linecap="round"
+              stroke-dasharray="628" stroke-dashoffset="628"
+              style="transition: stroke-dashoffset 2s cubic-bezier(0.25,0.46,0.45,0.94) 0.5s;"/>
+            <defs>
+              <linearGradient id="speedGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00F5FF"/>
+                <stop offset="100%" stop-color="#7B2FFF"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="speed-ring-val">
+            <span class="speed-num" id="ring-num">500</span>
+            <span class="speed-unit">KB/s</span>
+          </div>
+        </div>
+        <div class="speed-desc">Peak target on modern flagship devices<br>with optimized QR density &amp; 60 FPS</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">Core Features</div>
+      <h2 class="section-title">Everything in the Build</h2>
+      <p class="section-sub">Every feature listed in the project spec — compression, AI optimization, encryption, and real-time recovery.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-title">Multi-Algorithm Compression</div>
+        <div class="feature-desc">Automatically selects the best algorithm — Zstd, Brotli, or Gzip — based on file type to maximize the payload per QR frame.</div>
+        <div class="feature-tag">COMPRESSION</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔐</div>
+        <div class="feature-title">AES-256 Encryption</div>
+        <div class="feature-desc">Optional end-to-end encryption so files remain private even over a visual channel. Keys never leave the devices.</div>
+        <div class="feature-tag">SECURITY</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">♾</div>
+        <div class="feature-title">Selective Retransmission</div>
+        <div class="feature-desc">Receiver tracks only missing packets and requests retransmit without restarting the entire transfer — true packet-level recovery.</div>
+        <div class="feature-tag">PROTOCOL</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">✅</div>
+        <div class="feature-title">SHA-256 Integrity Check</div>
+        <div class="feature-desc">Every reassembled file is verified against its original hash. If a single bit flips, it's caught and the packet is re-requested.</div>
+        <div class="feature-tag">VERIFICATION</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-title">AI Blur Detection</div>
+        <div class="feature-desc">TensorFlow Lite model detects motion blur and camera shake in real-time, pausing capture and triggering automatic retries.</div>
+        <div class="feature-tag">AI / TFLITE</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🌙</div>
+        <div class="feature-title">Low-Light Enhancement</div>
+        <div class="feature-desc">OpenCV preprocessing pipeline boosts contrast and clarity for scanning under dim conditions without additional hardware.</div>
+        <div class="feature-tag">OPENCV</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">📐</div>
+        <div class="feature-title">Adaptive QR Density</div>
+        <div class="feature-desc">QR version and error correction level adjust dynamically based on detected scan distance and ambient lighting conditions.</div>
+        <div class="feature-tag">AI OPTIMIZATION</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🎞️</div>
+        <div class="feature-title">30–60 FPS Animated Display</div>
+        <div class="feature-desc">Smooth high-frame-rate QR animation engine ensures maximum throughput on devices capable of sustained 60 FPS rendering.</div>
+        <div class="feature-tag">RENDERING</div>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">📦</div>
+        <div class="feature-title">CRC32 Packet Headers</div>
+        <div class="feature-desc">Each chunk carries a packet ID, total count, and CRC32 checksum. Corrupt or partial packets are discarded cleanly and re-requested.</div>
+        <div class="feature-tag">PROTOCOL</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- FUTURE -->
+<section id="future">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-eyebrow">Roadmap</div>
+      <h2 class="section-title">Future Enhancements</h2>
+      <p class="section-sub">Post-MVP directions that extend QRLink into a complete visual communication platform.</p>
+    </div>
+    <div class="future-list reveal">
+      <div class="future-item">
+        <div class="future-num">01</div>
+        <div class="future-text"><strong>Multi-device broadcast</strong> — one sender streams to multiple receivers simultaneously using synchronized QR sequences.</div>
+        <div class="future-badge">v2.0</div>
+      </div>
+      <div class="future-item">
+        <div class="future-num">02</div>
+        <div class="future-text"><strong>Resume support</strong> — interrupted transfers pick up from the last confirmed packet, not from the start.</div>
+        <div class="future-badge">v2.0</div>
+      </div>
+      <div class="future-item">
+        <div class="future-num">03</div>
+        <div class="future-text"><strong>Cross-platform apps</strong> — native iOS, web (PWA), and desktop clients alongside the primary Android build.</div>
+        <div class="future-badge">v3.0</div>
+      </div>
+      <div class="future-item">
+        <div class="future-num">04</div>
+        <div class="future-text"><strong>Adaptive QR density AI</strong> — deep learning model trained to predict optimal QR complexity from real scan telemetry.</div>
+        <div class="future-badge">v3.0</div>
+      </div>
+      <div class="future-item">
+        <div class="future-num">05</div>
+        <div class="future-text"><strong>Hybrid visual channels</strong> — beyond QR: colored data matrices, LED flicker protocols, or multi-QR tile grids for higher bandwidth.</div>
+        <div class="future-badge">Research</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- CTA -->
+<section id="cta">
+  <div class="cta-bg"></div>
+  <div class="section-inner reveal">
+    <div class="hero-eyebrow" style="justify-content:center;">Ready to Build</div>
+    <h2 class="cta-title">Start Transferring Files <span class="accent">Without Any Wires</span></h2>
+    <p class="cta-sub">QRLink demonstrates that a screen and a camera are all you need for secure, compressed, verified file transfer.</p>
+    <div class="cta-grid">
+      <button class="btn-primary">Begin Development</button>
+      <button class="btn-secondary">View Full Spec</button>
+    </div>
+    <div class="cta-meta">Flutter · ZXing · TFLite · AES-256 · SHA-256 · CRC32 · 6-week timeline</div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">QR<span>Link</span></div>
+  <div class="footer-copy">Offline File Transfer via Animated QR Codes</div>
+  <div class="footer-links">
+    <a href="#architecture">Architecture</a>
+    <a href="#phases">Phases</a>
+    <a href="#tech">Stack</a>
+    <a href="#future">Roadmap</a>
+  </div>
+</footer>
+
+<script>
+/* ── PARTICLE SYSTEM ── */
+const canvas = document.getElementById('particle-canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = Math.random() * 1.5 + 0.2;
+    this.speedX = (Math.random() - 0.5) * 0.4;
+    this.speedY = (Math.random() - 0.5) * 0.4;
+    this.life = Math.random();
+    this.maxLife = Math.random() * 200 + 100;
+    this.color = Math.random() > 0.6 ? '#00F5FF' : Math.random() > 0.5 ? '#7B2FFF' : '#FF6B35';
+  }
+  update() {
+    this.x += this.speedX;
+    this.y += this.speedY;
+    this.life++;
+    if (this.life > this.maxLife || this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+  }
+  draw() {
+    const alpha = Math.sin((this.life / this.maxLife) * Math.PI) * 0.6;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < 120; i++) particles.push(new Particle());
+
+function animateParticles() {
+  ctx.clearRect(0, 0, W, H);
+  particles.forEach(p => { p.update(); p.draw(); });
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(animateParticles);
+}
+animateParticles();
+
+/* ── QR DEMO ANIMATION ── */
+const qrCanvas = document.getElementById('qr-demo');
+const qrCtx = qrCanvas.getContext('2d');
+const SIZE = 280;
+const CELL = 7;
+const COLS = Math.floor(SIZE / CELL);
+let frameNum = 0;
+let qrData = [];
+let frameCounter = document.getElementById('frame-counter');
+
+function generateQRPattern(seed) {
+  const grid = [];
+  for (let r = 0; r < COLS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      // Finder patterns
+      const inFinder = (r < 8 && c < 8) || (r < 8 && c >= COLS - 8) || (r >= COLS - 8 && c < 8);
+      if (inFinder) {
+        const localR = r < 8 ? r : r - (COLS - 8);
+        const localC = c < 8 ? c : c - (COLS - 8);
+        const border = localR === 0 || localR === 6 || localC === 0 || localC === 6;
+        const inner = localR >= 2 && localR <= 4 && localC >= 2 && localC <= 4;
+        grid[r][c] = (border || inner) ? 1 : 0;
+      } else {
+        // Pseudo-random data pattern seeded by frame
+        const val = Math.sin(r * 17.3 + c * 13.7 + seed * 0.31 + r * c * 0.007) > 0 ? 1 : 0;
+        grid[r][c] = val;
+      }
+    }
+  }
+  return grid;
+}
+
+function drawQR(grid) {
+  qrCtx.clearRect(0, 0, SIZE, SIZE);
+  qrCtx.fillStyle = '#0D1525';
+  qrCtx.fillRect(0, 0, SIZE, SIZE);
+  for (let r = 0; r < COLS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c]) {
+        // Finder pattern uses cyan, data uses white
+        const inFinder = (r < 8 && c < 8) || (r < 8 && c >= COLS - 8) || (r >= COLS - 8 && c < 8);
+        qrCtx.fillStyle = inFinder ? '#00F5FF' : '#E8F4FD';
+        qrCtx.fillRect(c * CELL, r * CELL, CELL - 1, CELL - 1);
+      }
+    }
+  }
+}
+
+let lastFrame = 0;
+function animateQR(ts) {
+  if (ts - lastFrame > 120) { // ~8 FPS for demo
+    frameNum = (frameNum + 1) % 48;
+    const grid = generateQRPattern(frameNum * 7.7);
+    drawQR(grid);
+    frameCounter.textContent = `FRAME ${String(frameNum + 1).padStart(3, '0')} / 048`;
+    lastFrame = ts;
+  }
+  requestAnimationFrame(animateQR);
+}
+requestAnimationFrame(animateQR);
+
+/* ── SCROLL REVEAL ── */
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((e, i) => {
+    if (e.isIntersecting) {
+      setTimeout(() => e.target.classList.add('visible'), 0);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+reveals.forEach(r => observer.observe(r));
+
+/* ── STAGGERED CARDS ── */
+const cardGroups = ['.phases-grid .phase-card', '.features-grid .feature-card'];
+cardGroups.forEach(sel => {
+  const cards = document.querySelectorAll(sel);
+  cards.forEach((card, i) => {
+    card.style.transitionDelay = (i * 0.07) + 's';
+  });
+});
+
+/* ── PERFORMANCE BARS ── */
+const barObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const fills = e.target.querySelectorAll('.perf-bar-fill');
+      fills.forEach((fill, i) => {
+        setTimeout(() => {
+          fill.style.width = fill.dataset.width + '%';
+        }, i * 200);
+      });
+      // Speed ring
+      const arc = document.getElementById('speed-arc');
+      if (arc) {
+        setTimeout(() => {
+          arc.style.strokeDashoffset = 628 * (1 - 0.88);
+        }, 400);
+      }
+      barObserver.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+const perfSection = document.getElementById('performance');
+if (perfSection) barObserver.observe(perfSection);
+
+/* ── NAV SCROLL EFFECT ── */
+window.addEventListener('scroll', () => {
+  const nav = document.querySelector('nav');
+  if (window.scrollY > 60) {
+    nav.style.background = 'rgba(5,8,16,0.95)';
+    nav.style.borderBottomColor = 'rgba(0,245,255,0.2)';
+  } else {
+    nav.style.background = 'rgba(5,8,16,0.7)';
+    nav.style.borderBottomColor = 'rgba(0,245,255,0.12)';
+  }
+});
+
+/* ── SMOOTH SCROLL FOR NAV LINKS ── */
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+/* ── HERO BUTTON ACTIONS ── */
+document.querySelectorAll('.btn-primary').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('#architecture').scrollIntoView({ behavior: 'smooth' });
+  });
+});
+document.querySelectorAll('.btn-secondary').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('#tech').scrollIntoView({ behavior: 'smooth' });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+name: qrlink
+description: Offline file transfer via animated QR codes — no internet, no Bluetooth, just QR.
+version: 1.0.0+1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # FILE HANDLING
+  file_picker: ^8.0.0
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.0
+  open_filex: ^4.3.4
+  share_plus: ^9.0.0
+
+  # QR GENERATION & SCANNING
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.0.0
+
+  # COMPRESSION
+  archive: ^3.6.0
+
+  # ENCRYPTION
+  cryptography: ^2.7.0
+
+  # DATABASE
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # STATE MANAGEMENT
+  flutter_riverpod: ^2.5.0
+
+  # UI / CHARTS
+  fl_chart: ^0.68.0
+  flutter_animate: ^4.5.0
+  google_fonts: ^6.2.0
+
+  # UTILS
+  crypto: ^3.0.3
+  uuid: ^4.3.3
+  wakelock_plus: ^1.2.1
+  image: ^4.2.0
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  mocktail: ^1.0.3
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
